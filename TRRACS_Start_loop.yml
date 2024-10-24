@@ -1,1 +1,76 @@
+---
+- name: Check and Start Managed Node Server using WLST on Linux (CentOS)
+  hosts: win
+  vars:
+    release_path: "/home/weblogic/ansadmin/Release_unit"
 
+  tasks:
+    - name: Find files in the source Release directory
+      find:
+        paths: "{{ release_path }}"
+        file_type: file
+        recurse: yes
+      register: release_searched_file_paths
+
+    - name: Debug to show the .ear file names
+      debug:
+        var: release_searched_file_paths
+
+
+
+    - name: Extract .ear file names from the found file paths
+      set_fact:
+        deploy_file: "{{ release_searched_file_paths.files | map(attribute='path') | map('basename') | list }}"
+        jvm_name: "{{ release_searched_file_paths.files | map(attribute='path') | map('dirname') | map('split', '/') | map('last') | list }}"
+
+    - name: Extract .ear file names from the found file paths
+       set_fact:
+        file_names_without_extension: "{{ deploy_file  | map('basename') | map('regex_replace', '\\.[^.]+$', '') | list }}"
+
+
+
+
+
+    - name: Debug to show the .ear file names
+      debug:
+        var: deploy_file
+
+          #    - name: Extract the last folder name for each file
+          #  set_fact:
+          #  last_folder_names: "{{ release_searched_file_paths.files | map(attribute='path') | map('dirname') | map('split', '/') | map('last') | list }}"
+
+    - name: Debug to show the last folder names
+      debug:
+        var: jvm_name
+
+    - name: Debug to show the file extension
+      debug:
+        var: file_names_without_extension
+
+
+    - name: Create deployments list
+      set_fact:
+        deployments: >
+          [{% for i in range(file_names_without_extension | length) %}
+          {% if not loop.first %},{% endif %}
+          {'app_name': '{{ file_names_without_extension[i] }}', 'managed_server_name': '{{ jvm_name[i] }}', 'Release_name': '{{ deploy_file[i] }}'}
+          {% endfor %}]
+
+
+    - name: Check deployments variable
+      debug:
+        var: deployments
+    - name: Print each deployment
+      debug:
+        msg: "App: {{ item.app_name }}, Managed Server: {{ item.managed_server_name }}, Release: {{ item.Release_name }}"
+      loop: "{{ deployments | default([]) }}"
+    - name: Loop over managed servers
+      include_tasks: startAllModule.yml
+      loop: "{{ deployments }}"
+      loop_control:
+        loop_var: deployment
+      vars:
+        app_name: "{{ deployment.app_name }}"
+        managed_server_name: "{{ deployment.managed_server_name }}"
+
+  
