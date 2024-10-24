@@ -1,1 +1,93 @@
+---
+- name: Create WLST script to check Managed Node Server status
+  copy:
+    content: |
+      connect( 'weblogic', 'Pandavas@5', 't3://localhost:35001')
+      state = state( '{{ managed_server_name }}', 'Server')
+      if state is not None:
+          print( '{{ managed_server_name }} status is: ' + state)
+      else:
+          print( 'Could not retrieve the state of {{ managed_server_name }}')
+      exit()
+    dest: /home/weblogic/Oracle/Middleware/Oracle_Home/wlserver/server/bin/check_{{ managed_server_name }}_status.py
 
+- name: Set WebLogic environment and check server status
+  shell: |
+    . /home/weblogic/Oracle/Middleware/Oracle_Home/wlserver/server/bin/setWLSEnv.sh && java weblogic.WLST /home/weblogic/Oracle/Middleware/Oracle_Home/wlserver/server/bin/check_{{ managed_server_name }}_status.py
+  args:
+    chdir: /home/weblogic/Oracle/Middleware/Oracle_Home/wlserver/server/bin/
+  register: check_status_result
+  ignore_errors: yes
+
+- name: Parse server status from the output
+  set_fact:
+    #  server_status: "{{ check_status_result.stdout | regex_search('Current state of \"{{ managed_server_name }}\" : (\\w+)', '\\1') | default('UNKNOWN') }}"
+    server_status: "{{ check_status_result.stdout | regex_search('Current state of \"' + managed_server_name + '\" : (\\w+)', '\\1') | default('UNKNOWN') }}"
+- name: Display Server Status
+  debug:
+    msg: "{{ managed_server_name }} status: {{ server_status }}"
+    # msg: "{{ server_status }}"
+
+- name: Create WLST script to start Managed Node Server
+  copy:
+    content: |
+      connect( 'weblogic', 'Pandavas@5', 't3://localhost:35001')
+      start( '{{ managed_server_name }}', 'Server')
+      exit()
+    dest: /home/weblogic/Oracle/Middleware/Oracle_Home/wlserver/server/bin/start_{{ managed_server_name }}_temp.py
+
+- name: Set WebLogic environment and run WLST script to start the server
+  shell: |
+    . /home/weblogic/Oracle/Middleware/Oracle_Home/wlserver/server/bin/setWLSEnv.sh && java weblogic.WLST /home/weblogic/Oracle/Middleware/Oracle_Home/wlserver/server/bin/start_{{ managed_server_name }}_temp.py
+  args:
+    chdir: /home/weblogic/Oracle/Middleware/Oracle_Home/wlserver/server/bin/
+  register: start_result
+  ignore_errors: yes
+  when: server_status[0] == "SHUTDOWN"
+
+- name: Display Start Server Output
+  debug:
+    var: start_result.stdout_lines
+  when: server_status[0] == "SHUTDOWN"
+
+- name: Display Start Server Error (if any)
+  debug:
+    var: start_result.stderr_lines
+  when: server_status[0] == "SHUTDOWN"
+
+- name: Remove WLST deployment script
+  stat:
+    path: /home/weblogic/Oracle/Middleware/Oracle_Home/wlserver/server/bin/start_{{ managed_server_name }}_temp.py
+  register: check_file
+
+- name: Remove WLST deployment script
+  file:
+    path: /home/weblogic/Oracle/Middleware/Oracle_Home/wlserver/server/bin/start_{{ managed_server_name }}_temp.py
+    state: absent
+  when: check_file.stat.exists
+- name: Set WebLogic environment and recheck server status
+  shell: |
+    . /home/weblogic/Oracle/Middleware/Oracle_Home/wlserver/server/bin/setWLSEnv.sh && java weblogic.WLST /home/weblogic/Oracle/Middleware/Oracle_Home/wlserver/server/bin/check_{{ managed_server_name }}_status.py
+  args:
+    chdir: /home/weblogic/Oracle/Middleware/Oracle_Home/wlserver/server/bin/
+  register: check_status_result
+  ignore_errors: yes
+
+- name: Parse latest server status
+  set_fact:
+    # server_status: "{{ check_status_result.stdout | regex_search('Current state of \"{{ managed_server_name }}\" : (\\w+)', '\\1') | default('UNKNOWN') }}"
+    server_status: "{{ check_status_result.stdout | regex_search('Current state of \"' + managed_server_name + '\" : (\\w+)', '\\1') | default('UNKNOWN') }}"
+- name: Display Latest Server Status
+  debug:
+    msg: "Latest server status for {{ managed_server_name }}: {{ server_status }}"
+
+- name: Remove WLST deployment script
+  stat:
+    path: /home/weblogic/Oracle/Middleware/Oracle_Home/wlserver/server/bin/check_{{ managed_server_name }}_status.py
+  register: check_file
+
+- name: Remove WLST deployment script
+  file:
+    path: /home/weblogic/Oracle/Middleware/Oracle_Home/wlserver/server/bin/check_{{ managed_server_name }}_status.py
+    state: absent
+  when: check_file.stat.exists
